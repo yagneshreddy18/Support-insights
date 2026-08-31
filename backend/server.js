@@ -34,10 +34,10 @@ app.get("/api/tickets", async (req, res) => {
                 p.recommended_action
             FROM tickets t
             JOIN customers c ON t.customer_id = c.id
-            JOIN users u ON t.agent_id = u.id
+            LEFT JOIN users u ON t.agent_id = u.id
             JOIN categories cat ON t.category_id = cat.id
             LEFT JOIN predictions p ON t.id = p.ticket_id
-            ORDER BY t.id;
+            ORDER BY t.id DESC;
         `);
 
         res.json(result.rows);
@@ -47,8 +47,176 @@ app.get("/api/tickets", async (req, res) => {
     }
 });
 
+app.post("/api/tickets", async (req, res) => {
+    try {
+        const { customer_id, category_id, subject, description, priority, channel } = req.body;
+        const result = await pool.query(`
+            INSERT INTO tickets (customer_id, category_id, category, subject, description, priority, status, channel)
+            VALUES ($1, $2, (SELECT name FROM categories WHERE id = $2), $3, $4, $5, 'Open', $6)
+            RETURNING *;
+        `, [customer_id, category_id, subject, description, priority, channel]);
+
+        res.status(201).json(result.rows[0]);
+    } catch (error) {
+        console.error("Error creating ticket:", error.message);
+        res.status(500).json({ error: "Failed to create ticket" });
+    }
+});
+
+app.put("/api/tickets/:id/status", async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+        
+        const result = await pool.query(`
+            UPDATE tickets
+            SET status = $1, 
+                resolved_at = CASE WHEN $1 = 'Resolved' THEN NOW() ELSE NULL END
+            WHERE id = $2
+            RETURNING *;
+        `, [status, id]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: "Ticket not found" });
+        }
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error("Error updating ticket status:", error.message);
+        res.status(500).json({ error: "Failed to update ticket status" });
+    }
+});
+
+app.get("/api/customers", async (req, res) => {
+    try {
+        const result = await pool.query(`SELECT id, name FROM customers ORDER BY name`);
+        res.json(result.rows);
+    } catch (error) {
+        console.error("Error fetching customers:", error.message);
+        res.status(500).json({ error: "Failed to fetch customers" });
+    }
+});
+
+app.get("/api/categories", async (req, res) => {
+    try {
+        const result = await pool.query(`SELECT id, name FROM categories ORDER BY name`);
+        res.json(result.rows);
+    } catch (error) {
+        console.error("Error fetching categories:", error.message);
+        res.status(500).json({ error: "Failed to fetch categories" });
+    }
+});
+
+app.get("/api/dashboard/summary", async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT
+                COUNT(*)::int AS total_tickets,
+                COUNT(*) FILTER (WHERE status = 'Open')::int AS open_tickets,
+                COUNT(*) FILTER (WHERE status = 'In Progress')::int AS in_progress_tickets,
+                COUNT(*) FILTER (WHERE status = 'Resolved')::int AS resolved_tickets,
+                COUNT(*) FILTER (WHERE priority = 'High')::int AS high_priority_tickets,
+                COUNT(*) FILTER (WHERE priority = 'Critical')::int AS critical_tickets,
+                COUNT(*) FILTER (WHERE p.polarity = 'negative')::int AS negative_polarity_tickets,
+                ROUND(AVG(p.sla_breach_probability), 4) AS average_sla_breach_probability,
+                ROUND(AVG(p.escalation_probability), 4) AS average_escalation_probability
+            FROM tickets t
+            LEFT JOIN predictions p ON t.id = p.ticket_id;
+        `);
+
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error("Error fetching dashboard summary:", error.message);
+        res.status(500).json({ error: "Failed to fetch dashboard summary" });
+    }
+});
+
+app.get("/api/dashboard/category-stats", async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT
+                cat.name AS category,
+                COUNT(t.id)::int AS ticket_count
+            FROM categories cat
+            LEFT JOIN tickets t ON t.category_id = cat.id
+            GROUP BY cat.name
+            ORDER BY ticket_count DESC, cat.name;
+        `);
+
+        res.json(result.rows);
+    } catch (error) {
+        console.error("Error fetching category stats:", error.message);
+        res.status(500).json({ error: "Failed to fetch category stats" });
+    }
+});
+
+app.get("/api/dashboard/status-stats", async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT
+                status,
+                COUNT(*)::int AS ticket_count
+            FROM tickets
+            GROUP BY status
+            ORDER BY ticket_count DESC, status;
+        `);
+
+        res.json(result.rows);
+    } catch (error) {
+        console.error("Error fetching status stats:", error.message);
+        res.status(500).json({ error: "Failed to fetch status stats" });
+    }
+});
+
+app.get("/api/dashboard/priority-stats", async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT
+                priority,
+                COUNT(*)::int AS ticket_count
+            FROM tickets
+            GROUP BY priority
+            ORDER BY ticket_count DESC, priority;
+        `);
+
+        res.json(result.rows);
+    } catch (error) {
+        console.error("Error fetching priority stats:", error.message);
+        res.status(500).json({ error: "Failed to fetch priority stats" });
+    }
+});
+
+app.get("/api/dashboard/risk-tickets", async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT
+                t.id AS ticket_id,
+                c.name AS customer_name,
+                cat.name AS category_name,
+                t.subject,
+                t.priority,
+                t.status,
+                p.polarity,
+                p.sla_breach_probability,
+                p.escalation_probability,
+                p.recommended_action
+            FROM tickets t
+            JOIN customers c ON t.customer_id = c.id
+            JOIN categories cat ON t.category_id = cat.id
+            JOIN predictions p ON t.id = p.ticket_id
+            WHERE p.sla_breach_probability >= 0.6
+               OR p.escalation_probability >= 0.6
+            ORDER BY p.sla_breach_probability DESC, p.escalation_probability DESC;
+        `);
+
+        res.json(result.rows);
+    } catch (error) {
+        console.error("Error fetching risk tickets:", error.message);
+        res.status(500).json({ error: "Failed to fetch risk tickets" });
+    }
+});
+
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-    console.log(`Server running on port  ${PORT}`);
+    console.log(`Server running on port ${PORT}`);
 });
