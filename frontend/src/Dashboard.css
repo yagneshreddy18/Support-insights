@@ -114,7 +114,8 @@ table {
   text-align: left;
 }
 
-th, td {
+th,
+td {
   padding: 1rem 1.5rem;
   border-bottom: 1px solid var(--border-color);
 }
@@ -141,15 +142,52 @@ tbody tr:hover {
   display: inline-block;
 }
 
-.badge.priority-Critical { background: rgba(239, 68, 68, 0.2); color: #f87171; }
-.badge.priority-High { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
-.badge.priority-Medium { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
-.badge.priority-Low { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+.badge.priority-Critical {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
 
-.badge.status-Open { background: rgba(239, 68, 68, 0.2); color: #f87171; }
-.badge.status-InProgress { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
-.badge.status-Resolved { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+.badge.priority-High {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
 
-.badge.polarity-negative { background: rgba(239, 68, 68, 0.2); color: #f87171; }
-.badge.polarity-neutral { background: rgba(156, 163, 175, 0.2); color: #9ca3af; }
-.badge.polarity-positive { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+.badge.priority-Medium {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+.badge.priority-Low {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+}
+
+.badge.status-Open {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+.badge.status-InProgress {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+.badge.status-Resolved {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+}
+
+.badge.polarity-negative {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+.badge.polarity-neutral {
+  background: rgba(156, 163, 175, 0.2);
+  color: #9ca3af;
+}
+
+.badge.polarity-positive {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+}

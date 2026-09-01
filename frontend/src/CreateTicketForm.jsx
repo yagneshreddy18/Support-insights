@@ -4,7 +4,7 @@ import axios from 'axios';
 const CreateTicketForm = ({ onTicketCreated }) => {
   const [customers, setCustomers] = useState([]);
   const [categories, setCategories] = useState([]);
-  
+
   const [formData, setFormData] = useState({
     customer_id: '',
     category_id: '',
@@ -66,10 +66,10 @@ const CreateTicketForm = ({ onTicketCreated }) => {
   return (
     <div className="card" style={{ marginBottom: '2rem' }}>
       <div className="card-title" style={{ fontSize: '1.2rem', marginBottom: '1rem', color: 'var(--text-primary)' }}>Create New Ticket</div>
-      
+
       {error && <div style={{ color: 'var(--danger)', marginBottom: '1rem' }}>{error}</div>}
       {success && <div style={{ color: 'var(--warning)', marginBottom: '1rem' }}>{success}</div>}
-      
+
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         <div style={{ display: 'flex', gap: '1rem' }}>
           <div style={{ flex: 1 }}>
@@ -126,3 +126,4 @@ const CreateTicketForm = ({ onTicketCreated }) => {
 };
 
 export default CreateTicketForm;
+
