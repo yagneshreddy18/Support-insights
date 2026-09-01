@@ -9,9 +9,13 @@ import {
   FiTrendingUp, 
   FiActivity 
 } from 'react-icons/fi';
+import { useAuth } from './context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import './Dashboard.css';
 
 const Dashboard = () => {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [summary, setSummary] = useState(null);
   const [tickets, setTickets] = useState([]);
   const [categoryStats, setCategoryStats] = useState([]);
@@ -69,9 +73,20 @@ const Dashboard = () => {
 
   return (
     <div className="dashboard-container">
-      <div className="dashboard-header">
-        <h1>Support Insights AI</h1>
-        <p>Real-time analytics and intelligent predictions</p>
+      <div className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h1>Support Insights AI</h1>
+          <p>Real-time analytics and intelligent predictions</p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <span>Welcome, <strong>{user?.name || 'User'}</strong></span>
+          <button 
+            onClick={() => { logout(); navigate('/login'); }}
+            style={{ padding: '0.5rem 1rem', background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+          >
+            Logout
+          </button>
+        </div>
       </div>
 
       <div className="summary-cards">

@@ -1,6 +1,8 @@
 const express = require("express");
 const cors = require("cors");
 const pool = require("./config/db");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
 
 const app = express();
 
@@ -10,6 +12,64 @@ app.use(express.json());
 app.get("/", (req, res) => {
     res.send("Support Insights Backend is running");
 });
+
+// Authentication Middleware
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    
+    if (!token) return res.status(401).json({ error: "Access denied. No token provided." });
+    
+    jwt.verify(token, process.env.JWT_SECRET || "fallback_secret", (err, user) => {
+        if (err) return res.status(403).json({ error: "Invalid or expired token." });
+        req.user = user;
+        next();
+    });
+};
+
+// Register
+app.post("/api/auth/register", async (req, res) => {
+    try {
+        const { name, email, password, role } = req.body;
+        const userExists = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
+        if (userExists.rows.length > 0) return res.status(400).json({ error: "Email already exists" });
+
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        const result = await pool.query(
+            "INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, $4) RETURNING id, name, email, role",
+            [name, email, hashedPassword, role || 'agent']
+        );
+        res.status(201).json(result.rows[0]);
+    } catch (error) {
+        console.error("Error registering user:", error.message);
+        res.status(500).json({ error: "Failed to register user" });
+    }
+});
+
+// Login
+app.post("/api/auth/login", async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        const userResult = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
+        
+        if (userResult.rows.length === 0) return res.status(400).json({ error: "Invalid credentials" });
+        const user = userResult.rows[0];
+        
+        const validPassword = await bcrypt.compare(password, user.password);
+        if (!validPassword) return res.status(400).json({ error: "Invalid credentials" });
+
+        const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET || "fallback_secret", { expiresIn: "8h" });
+        res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+    } catch (error) {
+        console.error("Error logging in:", error.message);
+        res.status(500).json({ error: "Failed to log in" });
+    }
+});
+
+// Apply authentication middleware to all other API routes
+app.use("/api", authenticateToken);
 
 app.get("/api/tickets", async (req, res) => {
     try {
