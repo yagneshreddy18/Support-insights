@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
   FiX, FiUser, FiTag, FiAlertTriangle, FiTrendingUp, FiClock, 
-  FiMessageSquare, FiList, FiStar, FiSend, FiUserCheck, FiCheckCircle
+  FiMessageSquare, FiList, FiStar, FiSend, FiUserCheck, FiCheckCircle, FiTrash2
 } from 'react-icons/fi';
+import { useAuth } from './context/AuthContext';
 
 const RiskGauge = ({ value, label, color }) => {
   const pct = Math.round((value || 0) * 100);
