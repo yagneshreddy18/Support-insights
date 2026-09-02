@@ -438,6 +438,7 @@ const Dashboard = () => {
         <TicketDetailModal
           ticketId={selectedTicketId}
           onClose={() => setSelectedTicketId(null)}
+          onUpdate={() => fetchDashboardData()}
         />
       )}
     </div>
