@@ -107,16 +107,84 @@ app.get("/api/tickets", async (req, res) => {
     }
 });
 
+// Intelligent AI Prediction helper
+const generateTicketPredictions = (subject, description, priority) => {
+    const text = `${subject} ${description}`.toLowerCase();
+    const negativeWords = ["down", "broken", "crash", "error", "fail", "failure", "urgent", "outage", "slow", "terrible", "bad", "loss", "stuck", "frustrated", "refund"];
+    const positiveWords = ["thanks", "good", "great", "resolved", "awesome", "helpful", "working", "fast"];
+
+    let negCount = 0;
+    let posCount = 0;
+    negativeWords.forEach(w => { if (text.includes(w)) negCount++; });
+    positiveWords.forEach(w => { if (text.includes(w)) posCount++; });
+
+    let polarity = "neutral";
+    let polarity_score = 0.0;
+    if (negCount > posCount) {
+        polarity = "negative";
+        polarity_score = -Math.min(1.0, 0.3 + negCount * 0.15);
+    } else if (posCount > negCount) {
+        polarity = "positive";
+        polarity_score = Math.min(1.0, 0.3 + posCount * 0.15);
+    }
+
+    let sla_breach_probability = 0.20;
+    let escalation_probability = 0.15;
+    let recommended_action = "Standard agent queue triage";
+
+    if (priority === "Critical") {
+        sla_breach_probability = Math.min(0.95, 0.70 + negCount * 0.05);
+        escalation_probability = Math.min(0.90, 0.65 + negCount * 0.05);
+        recommended_action = "Page tier-3 on-call engineer immediately and notify lead";
+    } else if (priority === "High") {
+        sla_breach_probability = Math.min(0.75, 0.50 + negCount * 0.05);
+        escalation_probability = Math.min(0.65, 0.40 + negCount * 0.05);
+        recommended_action = "Assign to specialist queue; check customer tier SLA";
+    } else if (priority === "Medium") {
+        sla_breach_probability = Math.min(0.45, 0.25 + negCount * 0.04);
+        escalation_probability = Math.min(0.35, 0.15 + negCount * 0.04);
+        recommended_action = "Review within 4 hours; provide standard troubleshooting steps";
+    } else {
+        sla_breach_probability = 0.08;
+        escalation_probability = 0.05;
+        recommended_action = "Queue for general agent review";
+    }
+
+    return {
+        polarity,
+        polarity_score: Number(polarity_score.toFixed(2)),
+        sla_breach_probability: Number(sla_breach_probability.toFixed(2)),
+        escalation_probability: Number(escalation_probability.toFixed(2)),
+        recommended_action
+    };
+};
+
 app.post("/api/tickets", async (req, res) => {
     try {
         const { customer_id, category_id, subject, description, priority, channel } = req.body;
-        const result = await pool.query(`
+        const ticketResult = await pool.query(`
             INSERT INTO tickets (customer_id, category_id, category, subject, description, priority, status, channel)
             VALUES ($1, $2, (SELECT name FROM categories WHERE id = $2), $3, $4, $5, 'Open', $6)
             RETURNING *;
         `, [customer_id, category_id, subject, description, priority, channel]);
 
-        res.status(201).json(result.rows[0]);
+        const newTicket = ticketResult.rows[0];
+
+        // Generate and store AI Predictions
+        const ai = generateTicketPredictions(subject, description, priority);
+        await pool.query(`
+            INSERT INTO predictions (ticket_id, polarity, polarity_score, sla_breach_probability, escalation_probability, recommended_action)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (ticket_id) DO NOTHING;
+        `, [newTicket.id, ai.polarity, ai.polarity_score, ai.sla_breach_probability, ai.escalation_probability, ai.recommended_action]);
+
+        // Insert initial creation event
+        await pool.query(`
+            INSERT INTO ticket_events (ticket_id, user_id, event_type, old_value, new_value, note, created_at)
+            VALUES ($1, $2, 'created', NULL, 'Open', 'Ticket created via ' || $3, NOW())
+        `, [newTicket.id, req.user?.id || null, channel || 'Portal']);
+
+        res.status(201).json(newTicket);
     } catch (error) {
         console.error("Error creating ticket:", error.message);
         res.status(500).json({ error: "Failed to create ticket" });
