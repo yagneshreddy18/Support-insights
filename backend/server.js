@@ -275,6 +275,67 @@ app.get("/api/dashboard/risk-tickets", async (req, res) => {
     }
 });
 
+app.get("/api/dashboard/trends", async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT
+                TO_CHAR(created_at::date, 'Mon DD') AS day,
+                created_at::date AS raw_date,
+                COUNT(*)::int AS ticket_count
+            FROM tickets
+            WHERE created_at >= NOW() - INTERVAL '30 days'
+            GROUP BY created_at::date
+            ORDER BY raw_date ASC;
+        `);
+
+        res.json(result.rows);
+    } catch (error) {
+        console.error("Error fetching trends:", error.message);
+        res.status(500).json({ error: "Failed to fetch trends" });
+    }
+});
+
+app.get("/api/tickets/:id", async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await pool.query(`
+            SELECT
+                t.id AS ticket_id,
+                c.name AS customer_name,
+                c.email AS customer_email,
+                u.name AS agent_name,
+                cat.name AS category_name,
+                t.subject,
+                t.description,
+                t.priority,
+                t.status,
+                t.channel,
+                t.created_at,
+                t.first_response_at,
+                t.resolved_at,
+                p.polarity,
+                p.polarity_score,
+                p.sla_breach_probability,
+                p.escalation_probability,
+                p.recommended_action
+            FROM tickets t
+            JOIN customers c ON t.customer_id = c.id
+            LEFT JOIN users u ON t.agent_id = u.id
+            JOIN categories cat ON t.category_id = cat.id
+            LEFT JOIN predictions p ON t.id = p.ticket_id
+            WHERE t.id = $1;
+        `, [id]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: "Ticket not found" });
+        }
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error("Error fetching ticket:", error.message);
+        res.status(500).json({ error: "Failed to fetch ticket" });
+    }
+});
+
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
