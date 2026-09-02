@@ -18,6 +18,7 @@ import {
   FiSearch,
   FiFilter,
   FiRefreshCw,
+  FiDownload,
 } from 'react-icons/fi';
 import { useAuth } from './context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -105,6 +106,35 @@ const Dashboard = () => {
       return matchSearch && matchStatus && matchPriority;
     });
   }, [tickets, search, filterStatus, filterPriority]);
+
+  const exportToCSV = () => {
+    if (!filteredTickets.length) {
+      alert('No tickets to export');
+      return;
+    }
+
+    const headers = ['Ticket ID', 'Subject', 'Customer', 'Category', 'Priority', 'Status', 'AI Polarity', 'SLA Breach Risk %'];
+    const rows = filteredTickets.map(t => [
+      t.ticket_id,
+      `"${(t.subject || '').replace(/"/g, '""')}"`,
+      `"${(t.customer_name || '').replace(/"/g, '""')}"`,
+      `"${(t.category_name || '').replace(/"/g, '""')}"`,
+      t.priority,
+      t.status,
+      t.polarity || 'N/A',
+      t.sla_breach_probability ? Math.round(t.sla_breach_probability * 100) : 0
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `support_tickets_export_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   if (loading) return (
     <div className="loading">
@@ -316,6 +346,21 @@ const Dashboard = () => {
               <option value="Medium">Medium</option>
               <option value="Low">Low</option>
             </select>
+
+            {/* Export CSV Button */}
+            <button
+              onClick={exportToCSV}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '0.4rem',
+                padding: '0.45rem 0.85rem', borderRadius: '8px',
+                border: '1px solid rgba(59,130,246,0.4)',
+                background: 'rgba(59,130,246,0.1)', color: '#60a5fa',
+                fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer',
+              }}
+              title="Export visible tickets to CSV"
+            >
+              <FiDownload /> Export CSV
+            </button>
           </div>
         </div>
         <div className="table-container">
