@@ -88,53 +88,45 @@ const Dashboard = () => {
   return (
     <div className="dashboard-container">
       {/* Top Header */}
-      <div className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <h1>Support Insights AI</h1>
-          <p>Next-generation support intelligence, automated triage &amp; analytics</p>
+      <header className="dashboard-header">
+        <div className="brand-title-group">
+          <h1>
+            Support Insights AI
+            <span className="brand-badge">Enterprise v2.0</span>
+          </h1>
+          <p>Real-time predictive support analytics, automated risk triage &amp; team management</p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-              Welcome, <strong style={{ color: 'var(--text-primary)' }}>{user?.name || 'User'}</strong>
-            </span>
-            <span style={{
-              padding: '0.15rem 0.55rem', borderRadius: '9999px', fontSize: '0.7rem', fontWeight: 800,
-              textTransform: 'uppercase', letterSpacing: '0.04em',
-              background: user?.role === 'admin' ? 'rgba(239,68,68,0.15)' : user?.role === 'lead' ? 'rgba(245,158,11,0.15)' : 'rgba(59,130,246,0.15)',
-              color: user?.role === 'admin' ? '#f87171' : user?.role === 'lead' ? '#fbbf24' : '#60a5fa',
-              border: `1px solid ${user?.role === 'admin' ? 'rgba(239,68,68,0.3)' : user?.role === 'lead' ? 'rgba(245,158,11,0.3)' : 'rgba(59,130,246,0.3)'}`
-            }}>
+
+        <div className="user-profile-bar">
+          <div className="user-identity-chip">
+            <div className="user-avatar-circle">
+              {(user?.name || 'U').charAt(0).toUpperCase()}
+            </div>
+            <span className="user-name-text">{user?.name || 'User'}</span>
+            <span className={`role-pill ${user?.role || 'agent'}`}>
               {user?.role || 'agent'}
             </span>
           </div>
+
           <button
             onClick={() => fetchDashboardData(true)}
-            title="Refresh Data"
-            style={{
-              padding: '0.55rem', background: 'rgba(255,255,255,0.05)',
-              color: 'var(--text-secondary)', border: '1px solid var(--border-color)',
-              borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center',
-            }}
+            title="Refresh Live Data"
+            className="icon-btn-ghost"
           >
             <FiRefreshCw style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} />
           </button>
+
           <button
             onClick={() => { logout(); navigate('/login'); }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '0.4rem',
-              padding: '0.55rem 1rem', background: 'rgba(239,68,68,0.1)',
-              color: '#f87171', border: '1px solid rgba(239,68,68,0.3)',
-              borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem',
-            }}
+            className="logout-btn"
           >
             <FiLogOut /> Logout
           </button>
         </div>
-      </div>
+      </header>
 
       {/* Modern Tab Navigation Bar */}
-      <div className="dashboard-nav-tabs">
+      <nav className="dashboard-nav-tabs">
         <button
           className={`dashboard-tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
           onClick={() => setActiveTab('overview')}
@@ -166,17 +158,13 @@ const Dashboard = () => {
         {/* Administrator Full Control Tab (Admin Role Only) */}
         {user?.role === 'admin' && (
           <button
-            className={`dashboard-tab-btn ${activeTab === 'admin' ? 'active' : ''}`}
+            className={`dashboard-tab-btn admin-tab ${activeTab === 'admin' ? 'active' : ''}`}
             onClick={() => setActiveTab('admin')}
-            style={{
-              borderLeft: '1px solid rgba(239,68,68,0.3)',
-              color: activeTab === 'admin' ? 'white' : '#f87171'
-            }}
           >
             <FiLock /> Security &amp; Users
           </button>
         )}
-      </div>
+      </nav>
 
       {/* Render Active View */}
       {activeTab === 'overview' && (
