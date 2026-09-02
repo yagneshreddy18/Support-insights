@@ -138,7 +138,7 @@ app.put("/api/tickets/:id/status", async (req, res) => {
         const result = await pool.query(`
             UPDATE tickets
             SET status = $1, 
-                resolved_at = CASE WHEN $1 = 'Resolved' THEN NOW() ELSE NULL END
+                resolved_at = CASE WHEN $1::text = 'Resolved' THEN NOW() ELSE NULL END
             WHERE id = $2
             RETURNING *;
         `, [status, id]);
