@@ -603,6 +603,33 @@ app.get("/api/analytics/performance", async (req, res) => {
     }
 });
 
+// Agent Workload & Performance Leaderboard
+app.get("/api/analytics/agents", async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT
+                u.id AS agent_id,
+                u.name AS agent_name,
+                u.email AS agent_email,
+                u.role AS agent_role,
+                COUNT(t.id)::int AS total_assigned,
+                COUNT(t.id) FILTER (WHERE t.status IN ('Open', 'In Progress'))::int AS active_tickets,
+                COUNT(t.id) FILTER (WHERE t.status = 'Resolved')::int AS resolved_tickets,
+                COUNT(t.id) FILTER (WHERE p.sla_breach_probability >= 0.5)::int AS high_risk_tickets,
+                ROUND(AVG(EXTRACT(EPOCH FROM (t.resolved_at - t.created_at))/3600)::numeric, 1) AS avg_resolution_hours
+            FROM users u
+            LEFT JOIN tickets t ON u.id = t.agent_id
+            LEFT JOIN predictions p ON t.id = p.ticket_id
+            GROUP BY u.id, u.name, u.email, u.role
+            ORDER BY resolved_tickets DESC, active_tickets DESC;
+        `);
+        res.json(result.rows);
+    } catch (error) {
+        console.error("Error fetching agent analytics:", error.message);
+        res.status(500).json({ error: "Failed to fetch agent analytics" });
+    }
+});
+
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
