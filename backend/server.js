@@ -27,19 +27,35 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
-// Register
+// Granular Role-Based Access Control (RBAC) Middleware
+const authorizeRoles = (...allowedRoles) => {
+    return (req, res, next) => {
+        if (!req.user || !allowedRoles.includes(req.user.role)) {
+            return res.status(403).json({ 
+                error: `Access denied. Requires one of roles: [${allowedRoles.join(', ')}]. Your current role is '${req.user?.role || 'unassigned'}'.` 
+            });
+        }
+        next();
+    };
+};
+
+// Register (default role is agent, only admin can promote to lead/admin)
 app.post("/api/auth/register", async (req, res) => {
     try {
-        const { name, email, password, role } = req.body;
+        const { name, email, password } = req.body;
         const userExists = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
         if (userExists.rows.length > 0) return res.status(400).json({ error: "Email already exists" });
+
+        // If this is the very first user ever created in the system, automatically grant admin!
+        const totalUsers = await pool.query("SELECT COUNT(*)::int as count FROM users");
+        const assignedRole = totalUsers.rows[0].count === 0 ? 'admin' : 'agent';
 
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
         const result = await pool.query(
             "INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, $4) RETURNING id, name, email, role",
-            [name, email, hashedPassword, role || 'agent']
+            [name, email, hashedPassword, assignedRole]
         );
         res.status(201).json(result.rows[0]);
     } catch (error) {
@@ -60,11 +76,26 @@ app.post("/api/auth/login", async (req, res) => {
         const validPassword = await bcrypt.compare(password, user.password);
         if (!validPassword) return res.status(400).json({ error: "Invalid credentials" });
 
-        const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET || "fallback_secret", { expiresIn: "8h" });
+        const token = jwt.sign(
+            { id: user.id, name: user.name, email: user.email, role: user.role },
+            process.env.JWT_SECRET || "fallback_secret",
+            { expiresIn: "8h" }
+        );
         res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
     } catch (error) {
         console.error("Error logging in:", error.message);
         res.status(500).json({ error: "Failed to log in" });
+    }
+});
+
+// Get current logged in user details & permissions
+app.get("/api/auth/me", authenticateToken, async (req, res) => {
+    try {
+        const userResult = await pool.query("SELECT id, name, email, role, created_at FROM users WHERE id = $1", [req.user.id]);
+        if (userResult.rows.length === 0) return res.status(404).json({ error: "User not found" });
+        res.json(userResult.rows[0]);
+    } catch (error) {
+        res.status(500).json({ error: "Failed to fetch user profile" });
     }
 });
 
