@@ -128,6 +128,13 @@ app.put("/api/tickets/:id/status", async (req, res) => {
         const { id } = req.params;
         const { status } = req.body;
         
+        // Get old status first for audit event
+        const oldTicket = await pool.query(`SELECT status FROM tickets WHERE id = $1`, [id]);
+        if (oldTicket.rows.length === 0) {
+            return res.status(404).json({ error: "Ticket not found" });
+        }
+        const oldStatus = oldTicket.rows[0].status;
+
         const result = await pool.query(`
             UPDATE tickets
             SET status = $1, 
@@ -136,9 +143,14 @@ app.put("/api/tickets/:id/status", async (req, res) => {
             RETURNING *;
         `, [status, id]);
 
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: "Ticket not found" });
+        // Insert event record
+        if (oldStatus !== status) {
+            await pool.query(`
+                INSERT INTO ticket_events (ticket_id, user_id, event_type, old_value, new_value, note, created_at)
+                VALUES ($1, $2, 'status_change', $3, $4, $5, NOW())
+            `, [id, req.user?.id || null, oldStatus, status, `Status changed from ${oldStatus} to ${status}`]);
         }
+
         res.json(result.rows[0]);
     } catch (error) {
         console.error("Error updating ticket status:", error.message);
@@ -333,6 +345,143 @@ app.get("/api/tickets/:id", async (req, res) => {
     } catch (error) {
         console.error("Error fetching ticket:", error.message);
         res.status(500).json({ error: "Failed to fetch ticket" });
+    }
+});
+
+// Get agents list
+app.get("/api/agents", async (req, res) => {
+    try {
+        const result = await pool.query(`SELECT id, name, email, role FROM users ORDER BY name ASC`);
+        res.json(result.rows);
+    } catch (error) {
+        console.error("Error fetching agents:", error.message);
+        res.status(500).json({ error: "Failed to fetch agents" });
+    }
+});
+
+// Assign ticket to agent
+app.put("/api/tickets/:id/assign", async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { agent_id } = req.body;
+
+        const oldTicket = await pool.query(`
+            SELECT t.agent_id, u.name as old_agent_name 
+            FROM tickets t 
+            LEFT JOIN users u ON t.agent_id = u.id 
+            WHERE t.id = $1
+        `, [id]);
+        
+        if (oldTicket.rows.length === 0) {
+            return res.status(404).json({ error: "Ticket not found" });
+        }
+
+        const oldAgentName = oldTicket.rows[0].old_agent_name || 'Unassigned';
+
+        const result = await pool.query(`
+            UPDATE tickets
+            SET agent_id = $1
+            WHERE id = $2
+            RETURNING *;
+        `, [agent_id, id]);
+
+        const newAgent = await pool.query(`SELECT name FROM users WHERE id = $1`, [agent_id]);
+        const newAgentName = newAgent.rows[0]?.name || 'Unassigned';
+
+        await pool.query(`
+            INSERT INTO ticket_events (ticket_id, user_id, event_type, old_value, new_value, note, created_at)
+            VALUES ($1, $2, 'assignment', $3, $4, $5, NOW())
+        `, [id, req.user?.id || null, oldAgentName, newAgentName, `Ticket assigned to ${newAgentName}`]);
+
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error("Error assigning ticket:", error.message);
+        res.status(500).json({ error: "Failed to assign ticket" });
+    }
+});
+
+// Get ticket messages / conversation
+app.get("/api/tickets/:id/messages", async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await pool.query(`
+            SELECT id, ticket_id, sender_type, message, created_at
+            FROM ticket_messages
+            WHERE ticket_id = $1
+            ORDER BY created_at ASC
+        `, [id]);
+        res.json(result.rows);
+    } catch (error) {
+        console.error("Error fetching ticket messages:", error.message);
+        res.status(500).json({ error: "Failed to fetch messages" });
+    }
+});
+
+// Add message to ticket
+app.post("/api/tickets/:id/messages", async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { sender_type, message } = req.body;
+
+        if (!message || !message.trim()) {
+            return res.status(400).json({ error: "Message cannot be empty" });
+        }
+
+        const result = await pool.query(`
+            INSERT INTO ticket_messages (ticket_id, sender_type, message, created_at)
+            VALUES ($1, $2, $3, NOW())
+            RETURNING *;
+        `, [id, sender_type || 'agent', message]);
+
+        // If it's the first agent response, update first_response_at
+        if ((sender_type || 'agent') === 'agent') {
+            await pool.query(`
+                UPDATE tickets 
+                SET first_response_at = COALESCE(first_response_at, NOW()) 
+                WHERE id = $1
+            `, [id]);
+        }
+
+        res.status(201).json(result.rows[0]);
+    } catch (error) {
+        console.error("Error adding message:", error.message);
+        res.status(500).json({ error: "Failed to add message" });
+    }
+});
+
+// Get ticket audit events
+app.get("/api/tickets/:id/events", async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await pool.query(`
+            SELECT te.id, te.ticket_id, te.event_type, te.old_value, te.new_value, te.note, te.created_at, u.name as user_name
+            FROM ticket_events te
+            LEFT JOIN users u ON te.user_id = u.id
+            WHERE te.ticket_id = $1
+            ORDER BY te.created_at DESC
+        `, [id]);
+        res.json(result.rows);
+    } catch (error) {
+        console.error("Error fetching events:", error.message);
+        res.status(500).json({ error: "Failed to fetch events" });
+    }
+});
+
+// Get feedback for ticket
+app.get("/api/tickets/:id/feedback", async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await pool.query(`
+            SELECT f.id, f.ticket_id, f.customer_id, f.rating, f.comment, f.created_at, c.name as customer_name
+            FROM feedback f
+            LEFT JOIN customers c ON f.customer_id = c.id
+            WHERE f.ticket_id = $1
+            ORDER BY f.created_at DESC
+        `, [id]);
+        res.json(result.rows);
+    } catch (error) {
+        console.error("Error fetching feedback:", error.message);
+        res.status(500).json({ error: "Failed to fetch feedback" });
     }
 });
 
