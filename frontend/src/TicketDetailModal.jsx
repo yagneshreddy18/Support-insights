@@ -32,6 +32,10 @@ const RiskGauge = ({ value, label, color }) => {
 };
 
 const TicketDetailModal = ({ ticketId, onClose, onUpdate }) => {
+  const { user: currentUser } = useAuth();
+  const isAdmin = currentUser?.role === 'admin';
+  const canReassign = currentUser?.role === 'admin' || currentUser?.role === 'lead';
+
   const [ticket, setTicket] = useState(null);
   const [agents, setAgents] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -47,6 +51,24 @@ const TicketDetailModal = ({ ticketId, onClose, onUpdate }) => {
 
   // Updating assignment / status
   const [updatingAction, setUpdatingAction] = useState(false);
+  const [deletingTicket, setDeletingTicket] = useState(false);
+
+  const handleDeleteTicket = async () => {
+    if (!window.confirm(`SECURITY WARNING: Are you sure you want to permanently delete ticket #${ticketId} and all associated conversation & audit history? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setDeletingTicket(true);
+      await axios.delete(`/api/tickets/${ticketId}`);
+      if (onUpdate) onUpdate();
+      onClose();
+    } catch (err) {
+      console.error('Failed to delete ticket:', err);
+      alert(err.response?.data?.error || 'Failed to delete ticket');
+      setDeletingTicket(false);
+    }
+  };
 
   const fetchTicketDetails = async () => {
     try {
@@ -233,13 +255,16 @@ const TicketDetailModal = ({ ticketId, onClose, onUpdate }) => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}><FiUserCheck style={{ verticalAlign: 'middle' }} /> Assignee:</span>
                   <select
-                    disabled={updatingAction}
+                    disabled={updatingAction || !canReassign}
                     value={agents.find(a => a.name === ticket.agent_name)?.id || ''}
                     onChange={(e) => handleAssignAgent(e.target.value)}
+                    title={!canReassign ? "Only Team Leads and Admins can reassign tickets" : "Assign to team member"}
                     style={{
                       background: 'var(--bg-primary)', color: 'var(--text-primary)',
                       border: '1px solid var(--border-color)', borderRadius: '6px',
-                      padding: '0.3rem 0.6rem', fontSize: '0.8rem', cursor: 'pointer'
+                      padding: '0.3rem 0.6rem', fontSize: '0.8rem',
+                      cursor: canReassign ? 'pointer' : 'not-allowed',
+                      opacity: canReassign ? 1 : 0.6
                     }}
                   >
                     <option value="">{ticket.agent_name ? ticket.agent_name : 'Unassigned'}</option>
@@ -248,6 +273,25 @@ const TicketDetailModal = ({ ticketId, onClose, onUpdate }) => {
                     ))}
                   </select>
                 </div>
+
+                {/* Permanent Delete Action (Admin Only) */}
+                {isAdmin && (
+                  <button
+                    onClick={handleDeleteTicket}
+                    disabled={deletingTicket}
+                    style={{
+                      marginLeft: 'auto',
+                      display: 'flex', alignItems: 'center', gap: '0.4rem',
+                      padding: '0.35rem 0.75rem', borderRadius: '6px',
+                      background: 'rgba(239,68,68,0.15)', color: '#f87171',
+                      border: '1px solid rgba(239,68,68,0.3)',
+                      fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer'
+                    }}
+                    title="Permanently delete this ticket (Admin permission)"
+                  >
+                    <FiTrash2 /> {deletingTicket ? 'Deleting...' : 'Delete Ticket'}
+                  </button>
+                )}
               </div>
             </div>
           ) : null}
