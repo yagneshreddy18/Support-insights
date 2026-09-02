@@ -458,8 +458,8 @@ app.get("/api/agents", async (req, res) => {
     }
 });
 
-// Assign ticket to agent
-app.put("/api/tickets/:id/assign", async (req, res) => {
+// Assign ticket to agent (Restricted to Admin and Lead)
+app.put("/api/tickets/:id/assign", authorizeRoles('admin', 'lead'), async (req, res) => {
     try {
         const { id } = req.params;
         const { agent_id } = req.body;
@@ -658,6 +658,83 @@ app.get("/api/analytics/agents", async (req, res) => {
     } catch (error) {
         console.error("Error fetching agent analytics:", error.message);
         res.status(500).json({ error: "Failed to fetch agent analytics" });
+    }
+});
+
+// Delete ticket permanently (Restricted strictly to Admin)
+app.delete("/api/tickets/:id", authorizeRoles('admin'), async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Cascade delete child tables first
+        await pool.query("DELETE FROM ticket_messages WHERE ticket_id = $1", [id]);
+        await pool.query("DELETE FROM ticket_events WHERE ticket_id = $1", [id]);
+        await pool.query("DELETE FROM predictions WHERE ticket_id = $1", [id]);
+        await pool.query("DELETE FROM feedback WHERE ticket_id = $1", [id]);
+
+        const result = await pool.query("DELETE FROM tickets WHERE id = $1 RETURNING *", [id]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: "Ticket not found" });
+        }
+
+        res.json({ message: "Ticket permanently deleted", ticket_id: id });
+    } catch (error) {
+        console.error("Error deleting ticket:", error.message);
+        res.status(500).json({ error: "Failed to delete ticket" });
+    }
+});
+
+// Admin: Get all users & roles (Restricted to Admin)
+app.get("/api/admin/users", authorizeRoles('admin'), async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT
+                u.id,
+                u.name,
+                u.email,
+                u.role,
+                u.created_at,
+                COUNT(t.id)::int AS tickets_assigned
+            FROM users u
+            LEFT JOIN tickets t ON u.id = t.agent_id
+            GROUP BY u.id, u.name, u.email, u.role, u.created_at
+            ORDER BY u.id ASC;
+        `);
+        res.json(result.rows);
+    } catch (error) {
+        console.error("Error fetching admin users:", error.message);
+        res.status(500).json({ error: "Failed to fetch users" });
+    }
+});
+
+// Admin: Update user role (Restricted to Admin)
+app.put("/api/admin/users/:id/role", authorizeRoles('admin'), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { role } = req.body;
+
+        if (!['admin', 'lead', 'agent'].includes(role)) {
+            return res.status(400).json({ error: "Invalid role. Must be 'admin', 'lead', or 'agent'." });
+        }
+
+        // Prevent self-demoting the last admin
+        if (Number(id) === req.user.id && role !== 'admin') {
+            const adminCount = await pool.query("SELECT COUNT(*)::int as count FROM users WHERE role = 'admin'");
+            if (adminCount.rows[0].count <= 1) {
+                return res.status(400).json({ error: "Cannot demote the only remaining administrator." });
+            }
+        }
+
+        const result = await pool.query(
+            "UPDATE users SET role = $1 WHERE id = $2 RETURNING id, name, email, role",
+            [role, id]
+        );
+
+        if (result.rows.length === 0) return res.status(404).json({ error: "User not found" });
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error("Error updating user role:", error.message);
+        res.status(500).json({ error: "Failed to update user role" });
     }
 });
 
