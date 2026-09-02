@@ -38,6 +38,7 @@ const Dashboard = () => {
   const [trends, setTrends] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedTicketId, setSelectedTicketId] = useState(null);
+  const [showSlaModal, setShowSlaModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   // Filtering & search
@@ -157,6 +158,17 @@ const Dashboard = () => {
           <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
             Welcome, <strong style={{ color: 'var(--text-primary)' }}>{user?.name || 'User'}</strong>
           </span>
+          <button
+            onClick={() => setShowSlaModal(true)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '0.4rem',
+              padding: '0.5rem 0.85rem', background: 'rgba(59,130,246,0.12)',
+              color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)',
+              borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem'
+            }}
+          >
+            <FiShield /> SLA &amp; CSAT
+          </button>
           <button
             onClick={() => fetchDashboardData(true)}
             title="Refresh"
@@ -441,6 +453,13 @@ const Dashboard = () => {
           ticketId={selectedTicketId}
           onClose={() => setSelectedTicketId(null)}
           onUpdate={() => fetchDashboardData()}
+        />
+      )}
+
+      {/* SLA & CSAT Performance Modal */}
+      {showSlaModal && (
+        <SlaPerformanceModal
+          onClose={() => setShowSlaModal(false)}
         />
       )}
     </div>
