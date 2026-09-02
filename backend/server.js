@@ -553,6 +553,56 @@ app.get("/api/tickets/:id/feedback", async (req, res) => {
     }
 });
 
+// Get SLA Rules
+app.get("/api/sla/rules", async (req, res) => {
+    try {
+        const result = await pool.query(`SELECT id, priority, response_time_minutes, resolution_time_minutes FROM sla_rules ORDER BY id ASC`);
+        res.json(result.rows);
+    } catch (error) {
+        console.error("Error fetching SLA rules:", error.message);
+        res.status(500).json({ error: "Failed to fetch SLA rules" });
+    }
+});
+
+// Customer Satisfaction (CSAT) analytics
+app.get("/api/analytics/csat", async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT
+                ROUND(AVG(rating), 2) AS average_rating,
+                COUNT(*)::int AS total_reviews,
+                COUNT(*) FILTER (WHERE rating >= 4)::int AS positive_reviews,
+                COUNT(*) FILTER (WHERE rating = 3)::int AS neutral_reviews,
+                COUNT(*) FILTER (WHERE rating <= 2)::int AS negative_reviews
+            FROM feedback;
+        `);
+        res.json(result.rows[0] || { average_rating: 0, total_reviews: 0, positive_reviews: 0 });
+    } catch (error) {
+        console.error("Error fetching CSAT:", error.message);
+        res.status(500).json({ error: "Failed to fetch CSAT" });
+    }
+});
+
+// SLA Performance metrics
+app.get("/api/analytics/performance", async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT
+                COUNT(*)::int as total_evaluated,
+                COUNT(*) FILTER (WHERE p.sla_breach_probability < 0.5)::int AS within_sla_count,
+                COUNT(*) FILTER (WHERE p.sla_breach_probability >= 0.5)::int AS breached_sla_count,
+                ROUND(AVG(EXTRACT(EPOCH FROM (COALESCE(t.resolved_at, NOW()) - t.created_at))/3600)::numeric, 1) AS avg_resolution_hours,
+                ROUND(AVG(EXTRACT(EPOCH FROM (COALESCE(t.first_response_at, NOW()) - t.created_at))/60)::numeric, 1) AS avg_first_response_minutes
+            FROM tickets t
+            LEFT JOIN predictions p ON t.id = p.ticket_id;
+        `);
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error("Error fetching performance metrics:", error.message);
+        res.status(500).json({ error: "Failed to fetch performance metrics" });
+    }
+});
+
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
