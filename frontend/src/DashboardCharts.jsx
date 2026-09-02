@@ -8,13 +8,16 @@ const CHART_BG = 'transparent';
 
 const tooltipStyle = {
   contentStyle: {
-    background: '#1e293b',
-    border: '1px solid #334155',
-    borderRadius: '8px',
-    color: '#f8fafc',
+    background: 'rgba(12, 18, 30, 0.95)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '10px',
+    color: '#f1f5f9',
+    boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+    fontFamily: 'Plus Jakarta Sans, sans-serif',
+    fontSize: '13px',
   },
-  labelStyle: { color: '#94a3b8' },
-  cursor: { fill: 'rgba(255,255,255,0.03)' },
+  labelStyle: { color: '#94a3b8', fontWeight: 600, fontSize: '11px', letterSpacing: '0.05em', textTransform: 'uppercase' },
+  cursor: { fill: 'rgba(99,102,241,0.07)' },
 };
 
 // ── Category Bar Chart ────────────────────────────────────────────
@@ -34,9 +37,9 @@ export const CategoryBarChart = ({ data }) => (
       />
       <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
       <Tooltip {...tooltipStyle} />
-      <Bar dataKey="ticket_count" name="Tickets" radius={[6, 6, 0, 0]}>
+      <Bar dataKey="ticket_count" name="Tickets" radius={[5, 5, 0, 0]}>
         {data.map((_, i) => (
-          <Cell key={i} fill={`hsl(${220 + i * 30}, 80%, 60%)`} />
+          <Cell key={i} fill={`hsl(${240 + i * 22}, 75%, ${58 + (i % 3) * 6}%)`} />
         ))}
       </Bar>
     </BarChart>
@@ -45,9 +48,9 @@ export const CategoryBarChart = ({ data }) => (
 
 // ── Priority Pie Chart ────────────────────────────────────────────
 const PRIORITY_COLORS = {
-  Critical: '#ef4444',
+  Critical: '#f43f5e',
   High: '#f59e0b',
-  Medium: '#3b82f6',
+  Medium: '#6366f1',
   Low: '#10b981',
 };
 
@@ -96,7 +99,7 @@ export const PriorityPieChart = ({ data }) => (
 
 // ── Status Donut Chart ────────────────────────────────────────────
 const STATUS_COLORS = {
-  Open: '#ef4444',
+  Open: '#f43f5e',
   'In Progress': '#f59e0b',
   Resolved: '#10b981',
 };
@@ -139,7 +142,7 @@ export const TrendsLineChart = ({ data }) => (
     <LineChart data={data} margin={{ top: 10, right: 20, left: -20, bottom: 0 }}>
       <defs>
         <linearGradient id="trendGrad" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#3b82f6" />
+          <stop offset="0%" stopColor="#6366f1" />
           <stop offset="100%" stopColor="#8b5cf6" />
         </linearGradient>
       </defs>
@@ -154,7 +157,7 @@ export const TrendsLineChart = ({ data }) => (
         stroke="url(#trendGrad)"
         strokeWidth={3}
         dot={{ fill: '#8b5cf6', r: 4, strokeWidth: 0 }}
-        activeDot={{ r: 6, fill: '#3b82f6' }}
+        activeDot={{ r: 6, fill: '#6366f1', stroke: '#a5b4fc', strokeWidth: 2 }}
       />
     </LineChart>
   </ResponsiveContainer>
