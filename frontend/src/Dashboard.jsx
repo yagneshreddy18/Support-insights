@@ -5,13 +5,15 @@ import OverviewView from './views/OverviewView';
 import TicketsView from './views/TicketsView';
 import SlaView from './views/SlaView';
 import TeamView from './views/TeamView';
+import AdminUsersView from './views/AdminUsersView';
 import {
   FiTrendingUp,
   FiInbox,
   FiShield,
   FiUsers,
   FiRefreshCw,
-  FiLogOut
+  FiLogOut,
+  FiLock
 } from 'react-icons/fi';
 import { useAuth } from './context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -92,9 +94,20 @@ const Dashboard = () => {
           <p>Next-generation support intelligence, automated triage &amp; analytics</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-            Welcome, <strong style={{ color: 'var(--text-primary)' }}>{user?.name || 'Agent'}</strong>
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+              Welcome, <strong style={{ color: 'var(--text-primary)' }}>{user?.name || 'User'}</strong>
+            </span>
+            <span style={{
+              padding: '0.15rem 0.55rem', borderRadius: '9999px', fontSize: '0.7rem', fontWeight: 800,
+              textTransform: 'uppercase', letterSpacing: '0.04em',
+              background: user?.role === 'admin' ? 'rgba(239,68,68,0.15)' : user?.role === 'lead' ? 'rgba(245,158,11,0.15)' : 'rgba(59,130,246,0.15)',
+              color: user?.role === 'admin' ? '#f87171' : user?.role === 'lead' ? '#fbbf24' : '#60a5fa',
+              border: `1px solid ${user?.role === 'admin' ? 'rgba(239,68,68,0.3)' : user?.role === 'lead' ? 'rgba(245,158,11,0.3)' : 'rgba(59,130,246,0.3)'}`
+            }}>
+              {user?.role || 'agent'}
+            </span>
+          </div>
           <button
             onClick={() => fetchDashboardData(true)}
             title="Refresh Data"
@@ -149,6 +162,20 @@ const Dashboard = () => {
         >
           <FiUsers /> Team Leaderboard
         </button>
+
+        {/* Administrator Full Control Tab (Admin Role Only) */}
+        {user?.role === 'admin' && (
+          <button
+            className={`dashboard-tab-btn ${activeTab === 'admin' ? 'active' : ''}`}
+            onClick={() => setActiveTab('admin')}
+            style={{
+              borderLeft: '1px solid rgba(239,68,68,0.3)',
+              color: activeTab === 'admin' ? 'white' : '#f87171'
+            }}
+          >
+            <FiLock /> Security &amp; Users
+          </button>
+        )}
       </div>
 
       {/* Render Active View */}
@@ -177,6 +204,10 @@ const Dashboard = () => {
 
       {activeTab === 'team' && (
         <TeamView />
+      )}
+
+      {activeTab === 'admin' && user?.role === 'admin' && (
+        <AdminUsersView />
       )}
 
       {/* Ticket Detail Modal (when any ticket is clicked across any view) */}
