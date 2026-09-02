@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import axios from 'axios';
 import CreateTicketForm from './CreateTicketForm';
 import TicketDetailModal from './TicketDetailModal';
+import SlaPerformanceModal from './SlaPerformanceModal';
 import {
   CategoryBarChart,
   PriorityPieChart,
@@ -19,6 +20,7 @@ import {
   FiFilter,
   FiRefreshCw,
   FiDownload,
+  FiShield,
 } from 'react-icons/fi';
 import { useAuth } from './context/AuthContext';
 import { useNavigate } from 'react-router-dom';
