@@ -16,8 +16,18 @@ export const AuthProvider = ({ children }) => {
 
     if (storedToken && storedUser) {
       setUser(JSON.parse(storedUser));
-      // Set axios default header so all future requests are authenticated
       axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+
+      // Refresh user role & permissions from server
+      axios.get('/api/auth/me')
+        .then(res => {
+          setUser(res.data);
+          localStorage.setItem('user', JSON.stringify(res.data));
+        })
+        .catch(() => {
+          // Token is expired or invalid
+          logout();
+        });
     }
     setLoading(false);
   }, []);
