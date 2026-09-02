@@ -3,6 +3,7 @@ import axios from 'axios';
 import CreateTicketForm from './CreateTicketForm';
 import TicketDetailModal from './TicketDetailModal';
 import SlaPerformanceModal from './SlaPerformanceModal';
+import AgentLeaderboardModal from './AgentLeaderboardModal';
 import {
   CategoryBarChart,
   PriorityPieChart,
@@ -21,6 +22,7 @@ import {
   FiRefreshCw,
   FiDownload,
   FiShield,
+  FiUsers,
 } from 'react-icons/fi';
 import { useAuth } from './context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -39,6 +41,7 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [selectedTicketId, setSelectedTicketId] = useState(null);
   const [showSlaModal, setShowSlaModal] = useState(false);
+  const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   // Filtering & search
@@ -158,6 +161,17 @@ const Dashboard = () => {
           <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
             Welcome, <strong style={{ color: 'var(--text-primary)' }}>{user?.name || 'User'}</strong>
           </span>
+          <button
+            onClick={() => setShowLeaderboardModal(true)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '0.4rem',
+              padding: '0.5rem 0.85rem', background: 'rgba(139,92,246,0.12)',
+              color: '#a78bfa', border: '1px solid rgba(139,92,246,0.3)',
+              borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem'
+            }}
+          >
+            <FiUsers /> Team Leaderboard
+          </button>
           <button
             onClick={() => setShowSlaModal(true)}
             style={{
@@ -460,6 +474,13 @@ const Dashboard = () => {
       {showSlaModal && (
         <SlaPerformanceModal
           onClose={() => setShowSlaModal(false)}
+        />
+      )}
+
+      {/* Agent Performance & Workload Leaderboard Modal */}
+      {showLeaderboardModal && (
+        <AgentLeaderboardModal
+          onClose={() => setShowLeaderboardModal(false)}
         />
       )}
     </div>
