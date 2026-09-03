@@ -377,7 +377,7 @@ const TicketDetailModal = ({ ticketId, onClose, onUpdate }) => {
                       letterSpacing: '0.08em', color: '#a78bfa', marginBottom: '1rem',
                       display: 'flex', alignItems: 'center', gap: '0.5rem',
                     }}>
-                      <FiTrendingUp /> Real-Time AI Predictions &amp; Sentiment
+                      <FiTrendingUp /> Real-Time AI Predictions &amp; Polarity
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-around', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
@@ -394,7 +394,7 @@ const TicketDetailModal = ({ ticketId, onClose, onUpdate }) => {
                       {ticket.polarity_score !== null && (
                         <RiskGauge
                           value={Math.abs(ticket.polarity_score)}
-                          label="Sentiment Intensity"
+                          label="Polarity Strength"
                           color={polarityColors[ticket.polarity] || '#94a3b8'}
                         />
                       )}
@@ -402,7 +402,7 @@ const TicketDetailModal = ({ ticketId, onClose, onUpdate }) => {
 
                     {ticket.polarity && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.75rem' }}>
-                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Customer Sentiment:</span>
+                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Customer Polarity:</span>
                         <span style={{
                           background: `${polarityColors[ticket.polarity]}22`,
                           color: polarityColors[ticket.polarity],
@@ -626,3 +626,4 @@ const TicketDetailModal = ({ ticketId, onClose, onUpdate }) => {
 };
 
 export default TicketDetailModal;
+

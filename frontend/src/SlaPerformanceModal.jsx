@@ -213,7 +213,7 @@ const SlaPerformanceModal = ({ onClose }) => {
                 borderRadius: '12px', padding: '1.25rem'
               }}>
                 <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.75rem' }}>
-                  CSAT Sentiment Breakdown
+                  CSAT Feedback Breakdown
                 </div>
                 <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem' }}>
@@ -242,3 +242,4 @@ const SlaPerformanceModal = ({ onClose }) => {
 };
 
 export default SlaPerformanceModal;
+

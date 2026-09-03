@@ -73,7 +73,17 @@ app.post("/api/auth/login", async (req, res) => {
         if (userResult.rows.length === 0) return res.status(400).json({ error: "Invalid credentials" });
         const user = userResult.rows[0];
         
-        const validPassword = await bcrypt.compare(password, user.password);
+                let validPassword = false;
+        if (user.password && user.password.startsWith("$2")) {
+            validPassword = await bcrypt.compare(password, user.password);
+        } else {
+            validPassword = password === user.password;
+            if (validPassword) {
+                const salt = await bcrypt.genSalt(10);
+                const upgradedPassword = await bcrypt.hash(password, salt);
+                await pool.query("UPDATE users SET password = $1 WHERE id = $2", [upgradedPassword, user.id]);
+            }
+        }
         if (!validPassword) return res.status(400).json({ error: "Invalid credentials" });
 
         const token = jwt.sign(
@@ -109,7 +119,7 @@ app.get("/api/tickets", async (req, res) => {
                 t.id AS ticket_id,
                 c.name AS customer_name,
                 u.name AS agent_name,
-                cat.name AS category_name,
+                COALESCE(cat.name, t.category, 'Uncategorized') AS category_name,
                 t.subject,
                 t.description,
                 t.priority,
@@ -126,7 +136,7 @@ app.get("/api/tickets", async (req, res) => {
             FROM tickets t
             JOIN customers c ON t.customer_id = c.id
             LEFT JOIN users u ON t.agent_id = u.id
-            JOIN categories cat ON t.category_id = cat.id
+            LEFT JOIN categories cat ON t.category_id = cat.id
             LEFT JOIN predictions p ON t.id = p.ticket_id
             ORDER BY t.id DESC;
         `);
@@ -153,7 +163,7 @@ const generateTicketPredictions = (subject, description, priority) => {
     let polarity_score = 0.0;
     if (negCount > posCount) {
         polarity = "negative";
-        polarity_score = -Math.min(1.0, 0.3 + negCount * 0.15);
+        polarity_score = Math.min(1.0, 0.3 + negCount * 0.15);
     } else if (posCount > negCount) {
         polarity = "positive";
         polarity_score = Math.min(1.0, 0.3 + posCount * 0.15);
@@ -362,7 +372,7 @@ app.get("/api/dashboard/risk-tickets", async (req, res) => {
             SELECT
                 t.id AS ticket_id,
                 c.name AS customer_name,
-                cat.name AS category_name,
+                COALESCE(cat.name, t.category, 'Uncategorized') AS category_name,
                 t.subject,
                 t.priority,
                 t.status,
@@ -372,7 +382,7 @@ app.get("/api/dashboard/risk-tickets", async (req, res) => {
                 p.recommended_action
             FROM tickets t
             JOIN customers c ON t.customer_id = c.id
-            JOIN categories cat ON t.category_id = cat.id
+            LEFT JOIN categories cat ON t.category_id = cat.id
             JOIN predictions p ON t.id = p.ticket_id
             WHERE p.sla_breach_probability >= 0.6
                OR p.escalation_probability >= 0.6
@@ -415,7 +425,7 @@ app.get("/api/tickets/:id", async (req, res) => {
                 c.name AS customer_name,
                 c.email AS customer_email,
                 u.name AS agent_name,
-                cat.name AS category_name,
+                COALESCE(cat.name, t.category, 'Uncategorized') AS category_name,
                 t.subject,
                 t.description,
                 t.priority,
@@ -432,7 +442,7 @@ app.get("/api/tickets/:id", async (req, res) => {
             FROM tickets t
             JOIN customers c ON t.customer_id = c.id
             LEFT JOIN users u ON t.agent_id = u.id
-            JOIN categories cat ON t.category_id = cat.id
+            LEFT JOIN categories cat ON t.category_id = cat.id
             LEFT JOIN predictions p ON t.id = p.ticket_id
             WHERE t.id = $1;
         `, [id]);
@@ -743,3 +753,5 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
+
+
