@@ -900,6 +900,6 @@ if (require.main === module) {
     });
 }
 
-module.exports = { app, authenticateToken, authorizeRoles, generateTicketPredictions };
+module.exports = { app, authenticateToken, authorizeRoles, generateTicketPredictions, getJwtSecret, isValidEmail, normalizeEmail, passwordIssues };
 
 
