@@ -123,7 +123,9 @@ const authorizeRoles = (...allowedRoles) => {
     };
 };
 
-// Register (default role is agent, only admin can promote to lead/admin)
+// Register — NON-ENUMERATING: always returns the same status + body whether the
+// email is new or already taken, so attackers can't probe which accounts exist.
+// (default role is agent, only admin can promote to lead/admin)
 app.post("/api/auth/register", async (req, res) => {
     try {
         const { name, email, password } = req.body;
@@ -141,8 +143,15 @@ app.post("/api/auth/register", async (req, res) => {
             return res.status(400).json({ error: `Weak password. Require ${pwIssues.join(", ")}.` });
         }
 
+        const GENERIC_OK = { message: "Registration received. If this email is new, an account has been created. Please log in." };
+
         const userExists = await pool.query("SELECT id FROM users WHERE LOWER(email) = LOWER($1)", [cleanEmail]);
-        if (userExists.rows.length > 0) return res.status(400).json({ error: "Email already exists" });
+        if (userExists.rows.length > 0) {
+            // Burn the same ~bcrypt cost as the creation path so response
+            // timing doesn't reveal that the account already existed.
+            await bcrypt.hash(password, BCRYPT_ROUNDS);
+            return res.status(200).json(GENERIC_OK);
+        }
 
         // If this is the very first user ever created in the system, automatically grant admin!
         const totalUsers = await pool.query("SELECT COUNT(*)::int as count FROM users");
@@ -150,11 +159,11 @@ app.post("/api/auth/register", async (req, res) => {
 
         const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
-        const result = await pool.query(
-            "INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, $4) RETURNING id, name, email, role",
+        await pool.query(
+            "INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, $4) RETURNING id",
             [cleanName, cleanEmail, hashedPassword, assignedRole]
         );
-        res.status(201).json(result.rows[0]);
+        return res.status(200).json(GENERIC_OK);
     } catch (error) {
         console.error("Error registering user:", error.message);
         res.status(500).json({ error: "Failed to register user" });

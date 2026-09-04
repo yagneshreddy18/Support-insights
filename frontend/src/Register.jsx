@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { useAuth } from './context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import { FiUser, FiMail, FiLock, FiArrowRight, FiShield, FiTrendingUp } from 'react-icons/fi';
 
@@ -8,21 +7,52 @@ const Register = () => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
   const navigate = useNavigate();
+
+  // Mirrors backend passwordIssues() so weak passwords are caught instantly
+  const passwordChecks = [
+    { label: 'At least 8 characters', pass: password.length >= 8 },
+    { label: 'One uppercase letter', pass: /[A-Z]/.test(password) },
+    { label: 'One lowercase letter', pass: /[a-z]/.test(password) },
+    { label: 'One number', pass: /[0-9]/.test(password) },
+    { label: 'One symbol', pass: /[^A-Za-z0-9]/.test(password) },
+  ];
+  const isPasswordStrong = passwordChecks.every((c) => c.pass) && password.length <= 72;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    const cleanName = name.trim();
+    const cleanEmail = email.trim().toLowerCase();
+    if (cleanName.length < 2 || cleanName.length > 60) {
+      setError('Name must be 2-60 characters.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(cleanEmail)) {
+      setError('Please enter a valid work email address.');
+      return;
+    }
+    if (!isPasswordStrong) {
+      setError('Password must be 8+ chars with uppercase, lowercase, number, and symbol.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
     setLoading(true);
     try {
-      await axios.post('/api/auth/register', { name, email, password });
-      // After registration, log in directly
-      const loginRes = await axios.post('/api/auth/login', { email, password });
-      login(loginRes.data.token, loginRes.data.user);
-      navigate('/');
+      // NOTE: backend is intentionally non-enumerating — it returns the same
+      // generic message whether the email is new or taken. Do NOT auto-login
+      // here (that would create a login oracle). Always route to /login.
+      const res = await axios.post('/api/auth/register', { name: cleanName, email: cleanEmail, password });
+      const msg = res.data?.message || 'Registration received. If this email is new, an account has been created. Please log in.';
+      setSuccess(msg);
+      setTimeout(() => navigate('/login', { state: { info: msg } }), 1200);
     } catch (err) {
       setError(err.response?.data?.error || 'Registration failed. Please try again.');
     } finally {
@@ -89,6 +119,21 @@ const Register = () => {
             textAlign: 'center'
           }}>
             {error}
+          </div>
+        )}
+
+        {success && (
+          <div style={{
+            background: 'rgba(16,185,129,0.1)',
+            border: '1px solid rgba(16,185,129,0.3)',
+            color: '#34d399',
+            padding: '0.75rem 1rem',
+            borderRadius: 'var(--radius-md)',
+            fontSize: '0.85rem',
+            marginBottom: '1.5rem',
+            textAlign: 'center'
+          }}>
+            {success}
           </div>
         )}
 
@@ -161,6 +206,46 @@ const Register = () => {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                minLength={8}
+                maxLength={72}
+                style={{
+                  width: '100%',
+                  paddingLeft: '2.75rem',
+                  paddingRight: '1rem',
+                  paddingTop: '0.75rem',
+                  paddingBottom: '0.75rem',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border-card)',
+                  background: 'var(--bg-input)',
+                  color: 'var(--text-main)',
+                  fontSize: '0.95rem'
+                }}
+              />
+            </div>
+            {/* Live password-strength checklist (mirrors backend rules) */}
+            {password.length > 0 && (
+              <ul style={{ listStyle: 'none', margin: '0.6rem 0 0', padding: 0, fontSize: '0.78rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                {passwordChecks.map((c) => (
+                  <li key={c.label} style={{ color: c.pass ? '#34d399' : 'var(--text-dim)' }}>
+                    {c.pass ? '✓' : '○'} {c.label}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Confirm Password
+            </label>
+            <div style={{ position: 'relative' }}>
+              <FiLock style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)', fontSize: '1rem' }} />
+              <input
+                type="password"
+                placeholder="Repeat your password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
                 style={{
                   width: '100%',
                   paddingLeft: '2.75rem',
@@ -179,7 +264,7 @@ const Register = () => {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !isPasswordStrong}
             className="btn-primary"
             style={{
               width: '100%',

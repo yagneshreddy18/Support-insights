@@ -114,10 +114,28 @@ describe("App routing + AuthContext", () => {
     assert.ok(src.includes("type=\"password\""));
   });
 
-  it("Register creates account then logs in", () => {
+  it("Login normalizes + validates email client-side", () => {
+    const src = read("Login.jsx");
+    assert.ok(src.includes("trim().toLowerCase()"));
+    assert.ok(src.includes("valid work email"));
+  });
+
+  it("Register creates account then routes to login (no auto-login oracle)", () => {
     const src = read("Register.jsx");
     assert.ok(src.includes("axios.post('/api/auth/register'"));
-    assert.ok(src.includes("axios.post('/api/auth/login'"));
+    assert.ok(!src.includes("axios.post('/api/auth/login'"), "register must not auto-login (enumeration oracle)");
+    assert.ok(src.includes("navigate('/login'"));
+    assert.ok(src.includes("Registration received"));
+  });
+
+  it("Register enforces strong password + confirm + checklist", () => {
+    const src = read("Register.jsx");
+    assert.ok(src.includes("confirmPassword"));
+    assert.ok(src.includes("Passwords do not match"));
+    assert.ok(src.includes("passwordChecks"));
+    assert.ok(src.includes("One uppercase letter"));
+    assert.ok(src.includes("One symbol"));
+    assert.ok(src.includes("maxLength={72}"));
   });
 });
 

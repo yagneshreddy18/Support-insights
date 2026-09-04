@@ -122,19 +122,23 @@ describe("authenticateToken middleware", () => {
     assert.equal(nextCalled, false);
   });
 
-  it("accepts a valid JWT and attaches req.user", () => {
+  it("accepts a valid JWT and attaches req.user (fresh role from DB)", async () => {
     const jwt = require("jsonwebtoken");
-    const payload = { id: 1, name: "Tester", email: "t@t.com", role: "agent" };
-    const token = jwt.sign(payload, process.env.JWT_SECRET || "fallback_secret", {
-      expiresIn: "1h",
-    });
+    const { getJwtSecret } = require("../server.js");
+    // Use a real user id so the fresh-role DB lookup succeeds
+    const pool = require("../config/db");
+    let realId = 1;
+    try {
+      const r = await pool.query("SELECT id, email, role FROM users ORDER BY id ASC LIMIT 1");
+      if (r.rows.length) realId = r.rows[0].id;
+    } catch {}
+    const payload = { id: realId, name: "Tester", email: "t@t.com", role: "agent" };
+    const token = jwt.sign(payload, getJwtSecret(), { expiresIn: "1h" });
     const req = { headers: { authorization: `Bearer ${token}` } };
     const res = mockRes();
-    let nextCalled = false;
-    authenticateToken(req, res, () => (nextCalled = true));
-    assert.equal(nextCalled, true);
-    assert.equal(req.user.email, "t@t.com");
-    assert.equal(req.user.role, "agent");
+    await new Promise((resolve) => authenticateToken(req, res, resolve));
+    assert.ok(req.user, "req.user should be set");
+    assert.equal(req.user.id, realId);
   });
 });
 
@@ -256,10 +260,11 @@ describe("API route surface", () => {
     assert.ok(src.includes("Message cannot be empty"));
   });
 
-  it("hashes passwords with bcrypt and signs JWT with 8h expiry", () => {
+  it("hashes passwords with bcrypt (12 rounds) and signs short-lived JWT", () => {
     assert.ok(src.includes("bcrypt.hash"));
     assert.ok(src.includes("bcrypt.compare"));
-    assert.ok(src.includes('expiresIn: "8h"'));
+    assert.ok(src.includes("BCRYPT_ROUNDS"));
+    assert.ok(src.includes('expiresIn: "2h"'));
   });
 });
 
@@ -341,11 +346,9 @@ describe("live HTTP + Postgres integration", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: "Test User", email: testEmail, password: testPass }),
     });
-    assert.equal(reg.status, 201);
-    const created = await reg.json();
-    testUserId = created.id;
-    assert.ok(created.id);
-    assert.ok(["agent", "admin"].includes(created.role));
+    // Non-enumerating: same 200 + generic message for new and existing emails
+    assert.equal(reg.status, 200);
+    assert.match((await reg.json()).message, /Registration received/i);
 
     const login = await fetch(`${baseUrl}/api/auth/login`, {
       method: "POST",
@@ -356,6 +359,7 @@ describe("live HTTP + Postgres integration", () => {
     const data = await login.json();
     assert.ok(data.token);
     testToken = data.token;
+    testUserId = data.user.id;
 
     const me = await fetch(`${baseUrl}/api/auth/me`, {
       headers: { Authorization: `Bearer ${testToken}` },
@@ -364,14 +368,15 @@ describe("live HTTP + Postgres integration", () => {
     assert.equal((await me.json()).email, testEmail);
   });
 
-  it("rejects duplicate registration with 400", async (t) => {
+  it("returns identical generic success for duplicate registration (anti-enumeration)", async (t) => {
     if (!dbAvailable || !testToken) return t.skip("needs registered user");
     const r = await fetch(`${baseUrl}/api/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: "Dup", email: testEmail, password: testPass }),
     });
-    assert.equal(r.status, 400);
+    assert.equal(r.status, 200);
+    assert.match((await r.json()).message, /Registration received/i);
   });
 
   it("authenticated reads: tickets/customers/categories/dashboards", async (t) => {

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useAuth } from './context/AuthContext';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { FiLock, FiMail, FiArrowRight, FiShield, FiTrendingUp } from 'react-icons/fi';
 
 const Login = () => {
@@ -11,13 +11,24 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const infoMessage = location.state?.info || '';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    const cleanEmail = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(cleanEmail)) {
+      setError('Please enter a valid work email address.');
+      return;
+    }
+    if (!password) {
+      setError('Please enter your password.');
+      return;
+    }
     setLoading(true);
     try {
-      const res = await axios.post('/api/auth/login', { email, password });
+      const res = await axios.post('/api/auth/login', { email: cleanEmail, password });
       login(res.data.token, res.data.user);
       navigate('/');
     } catch (err) {
@@ -73,6 +84,21 @@ const Login = () => {
             Sign in to access Support Insights AI workspace
           </p>
         </div>
+
+        {infoMessage && !error && (
+          <div style={{
+            background: 'rgba(16,185,129,0.1)',
+            border: '1px solid rgba(16,185,129,0.3)',
+            color: '#34d399',
+            padding: '0.75rem 1rem',
+            borderRadius: 'var(--radius-md)',
+            fontSize: '0.85rem',
+            marginBottom: '1.5rem',
+            textAlign: 'center'
+          }}>
+            {infoMessage}
+          </div>
+        )}
 
         {error && (
           <div style={{
