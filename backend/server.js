@@ -1,28 +1,112 @@
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 const pool = require("./config/db");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
 const app = express();
+app.disable("x-powered-by");
 
-app.use(cors());
-app.use(express.json());
+// Security headers (CSP, HSTS, noSniff, frameguard, etc.)
+app.use(helmet());
+
+// Restrict CORS to the frontend origin instead of wide-open "*".
+// Set FRONTEND_URL in .env for production (e.g. https://app.yourdomain.com).
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
+app.use(cors({
+    origin: (origin, cb) => {
+        // Allow same-origin / curl / mobile (no Origin header) and the configured frontend
+        if (!origin || origin === FRONTEND_URL) return cb(null, true);
+        // In development, also allow any localhost vite port for convenience
+        if (process.env.NODE_ENV !== "production" && /^http:\/\/localhost:\d+$/.test(origin)) {
+            return cb(null, true);
+        }
+        return cb(new Error("CORS blocked: origin not allowed"));
+    },
+    credentials: true,
+}));
+
+// Cap JSON payload size to blunt large-payload DoS
+app.use(express.json({ limit: "10kb" }));
+
+// Resolve JWT secret — fail fast in production instead of silently using a
+// publicly-known fallback (anyone reading the repo could forge admin tokens).
+const getJwtSecret = () => {
+    const secret = process.env.JWT_SECRET;
+    if (secret && secret.length >= 32) return secret;
+    if (process.env.NODE_ENV === "production") {
+        throw new Error("FATAL: JWT_SECRET missing or too short (>=32 chars required) in production.");
+    }
+    if (!secret) console.warn("WARNING: JWT_SECRET not set — using insecure dev fallback. Set a 64+ char secret in .env.");
+    return secret || "fallback_secret";
+};
+
+// --- Shared auth validation helpers (mirrored client-side) ---
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
+const isValidEmail = (email) => {
+    const e = normalizeEmail(email);
+    return e.length >= 5 && e.length <= 254 && EMAIL_RE.test(e);
+};
+// Strong password: 8-72 chars (bcrypt limit), upper + lower + digit + symbol
+const passwordIssues = (password) => {
+    const issues = [];
+    if (typeof password !== "string") return ["Password must be a string."];
+    if (password.length < 8) issues.push("at least 8 characters");
+    if (password.length > 72) issues.push("at most 72 characters (bcrypt limit)");
+    if (!/[A-Z]/.test(password)) issues.push("one uppercase letter");
+    if (!/[a-z]/.test(password)) issues.push("one lowercase letter");
+    if (!/[0-9]/.test(password)) issues.push("one number");
+    if (!/[^A-Za-z0-9]/.test(password)) issues.push("one symbol");
+    return issues;
+};
+const BCRYPT_ROUNDS = 12;
+
+// Brute-force protection: strict on auth, lenient on general API.
+// Limits are per-IP; tests make <10 auth calls so these never trigger in CI.
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 50,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many auth attempts. Please wait 15 minutes and try again." },
+});
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 500,
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+app.use("/api/auth/", authLimiter);
+app.use("/api/", apiLimiter);
 
 app.get("/", (req, res) => {
     res.send("Support Insights Backend is running");
 });
 
-// Authentication Middleware
+// Authentication Middleware — verifies JWT then refreshes role from DB so a
+// demoted admin/lead loses privileges immediately (no 8h stale-role window).
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
     
     if (!token) return res.status(401).json({ error: "Access denied. No token provided." });
     
-    jwt.verify(token, process.env.JWT_SECRET || "fallback_secret", (err, user) => {
+    jwt.verify(token, getJwtSecret(), async (err, decoded) => {
         if (err) return res.status(403).json({ error: "Invalid or expired token." });
-        req.user = user;
+        try {
+            // Refresh role from DB; fail closed if the user was deleted
+            const fresh = await pool.query("SELECT id, role FROM users WHERE id = $1", [decoded.id]);
+            if (fresh.rows.length === 0) {
+                return res.status(401).json({ error: "Account no longer exists. Please log in again." });
+            }
+            req.user = { ...decoded, role: fresh.rows[0].role };
+        } catch {
+            // DB transient failure: fall back to token claims rather than lock everyone out
+            req.user = decoded;
+        }
         next();
     });
 };
@@ -43,19 +127,32 @@ const authorizeRoles = (...allowedRoles) => {
 app.post("/api/auth/register", async (req, res) => {
     try {
         const { name, email, password } = req.body;
-        const userExists = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
+        const cleanName = String(name || "").trim();
+        const cleanEmail = normalizeEmail(email);
+
+        if (!cleanName || cleanName.length < 2 || cleanName.length > 60) {
+            return res.status(400).json({ error: "Name must be 2-60 characters." });
+        }
+        if (!isValidEmail(cleanEmail)) {
+            return res.status(400).json({ error: "Invalid email address." });
+        }
+        const pwIssues = passwordIssues(password);
+        if (pwIssues.length > 0) {
+            return res.status(400).json({ error: `Weak password. Require ${pwIssues.join(", ")}.` });
+        }
+
+        const userExists = await pool.query("SELECT id FROM users WHERE LOWER(email) = LOWER($1)", [cleanEmail]);
         if (userExists.rows.length > 0) return res.status(400).json({ error: "Email already exists" });
 
         // If this is the very first user ever created in the system, automatically grant admin!
         const totalUsers = await pool.query("SELECT COUNT(*)::int as count FROM users");
         const assignedRole = totalUsers.rows[0].count === 0 ? 'admin' : 'agent';
 
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
+        const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
         const result = await pool.query(
             "INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, $4) RETURNING id, name, email, role",
-            [name, email, hashedPassword, assignedRole]
+            [cleanName, cleanEmail, hashedPassword, assignedRole]
         );
         res.status(201).json(result.rows[0]);
     } catch (error) {
@@ -64,11 +161,16 @@ app.post("/api/auth/register", async (req, res) => {
     }
 });
 
-// Login
+// Login (with legacy plaintext upgrade + constant generic errors to avoid enumeration)
 app.post("/api/auth/login", async (req, res) => {
     try {
         const { email, password } = req.body;
-        const userResult = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
+        const cleanEmail = normalizeEmail(email);
+        if (!isValidEmail(cleanEmail) || typeof password !== "string" || password.length === 0) {
+            return res.status(400).json({ error: "Invalid credentials" });
+        }
+        // Case-insensitive lookup so "User@X.com" matches "user@x.com"
+        const userResult = await pool.query("SELECT * FROM users WHERE LOWER(email) = LOWER($1)", [cleanEmail]);
         
         if (userResult.rows.length === 0) return res.status(400).json({ error: "Invalid credentials" });
         const user = userResult.rows[0];
@@ -79,8 +181,7 @@ app.post("/api/auth/login", async (req, res) => {
         } else {
             validPassword = password === user.password;
             if (validPassword) {
-                const salt = await bcrypt.genSalt(10);
-                const upgradedPassword = await bcrypt.hash(password, salt);
+                const upgradedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
                 await pool.query("UPDATE users SET password = $1 WHERE id = $2", [upgradedPassword, user.id]);
             }
         }
@@ -88,8 +189,8 @@ app.post("/api/auth/login", async (req, res) => {
 
         const token = jwt.sign(
             { id: user.id, name: user.name, email: user.email, role: user.role },
-            process.env.JWT_SECRET || "fallback_secret",
-            { expiresIn: "8h" }
+            getJwtSecret(),
+            { expiresIn: "2h" }
         );
         res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
     } catch (error) {
@@ -200,14 +301,39 @@ const generateTicketPredictions = (subject, description, priority) => {
     };
 };
 
+const ALLOWED_PRIORITIES = ["Low", "Medium", "High", "Critical"];
+const ALLOWED_STATUSES = ["Open", "In Progress", "Resolved"];
+const ALLOWED_CHANNELS = ["Portal", "Email", "Phone", "Chat"];
+const ALLOWED_SENDER_TYPES = ["agent", "customer"];
+
 app.post("/api/tickets", async (req, res) => {
     try {
         const { customer_id, category_id, subject, description, priority, channel } = req.body;
+        const cleanSubject = String(subject || "").trim();
+        const cleanDescription = String(description || "").trim();
+        if (!Number.isInteger(customer_id)) {
+            return res.status(400).json({ error: "Invalid customer_id." });
+        }
+        if (!Number.isInteger(category_id)) {
+            return res.status(400).json({ error: "Invalid category_id." });
+        }
+        if (!cleanSubject || cleanSubject.length > 200) {
+            return res.status(400).json({ error: "Subject is required (max 200 chars)." });
+        }
+        if (!cleanDescription || cleanDescription.length > 5000) {
+            return res.status(400).json({ error: "Description is required (max 5000 chars)." });
+        }
+        if (!ALLOWED_PRIORITIES.includes(priority)) {
+            return res.status(400).json({ error: `Invalid priority. Must be one of: ${ALLOWED_PRIORITIES.join(", ")}.` });
+        }
+        if (!ALLOWED_CHANNELS.includes(channel)) {
+            return res.status(400).json({ error: `Invalid channel. Must be one of: ${ALLOWED_CHANNELS.join(", ")}.` });
+        }
         const ticketResult = await pool.query(`
             INSERT INTO tickets (customer_id, category_id, category, subject, description, priority, status, channel)
             VALUES ($1, $2, (SELECT name FROM categories WHERE id = $2), $3, $4, $5, 'Open', $6)
             RETURNING *;
-        `, [customer_id, category_id, subject, description, priority, channel]);
+        `, [customer_id, category_id, cleanSubject, cleanDescription, priority, channel]);
 
         const newTicket = ticketResult.rows[0];
 
@@ -236,6 +362,9 @@ app.put("/api/tickets/:id/status", async (req, res) => {
     try {
         const { id } = req.params;
         const { status } = req.body;
+        if (!ALLOWED_STATUSES.includes(status)) {
+            return res.status(400).json({ error: `Invalid status. Must be one of: ${ALLOWED_STATUSES.join(", ")}.` });
+        }
         
         // Get old status first for audit event
         const oldTicket = await pool.query(`SELECT status FROM tickets WHERE id = $1`, [id]);
@@ -473,6 +602,14 @@ app.put("/api/tickets/:id/assign", authorizeRoles('admin', 'lead'), async (req, 
     try {
         const { id } = req.params;
         const { agent_id } = req.body;
+        if (!Number.isInteger(agent_id)) {
+            return res.status(400).json({ error: "Invalid agent_id." });
+        }
+        // Verify the assignee actually exists (prevents dangling FK / typos)
+        const assignee = await pool.query(`SELECT id, name FROM users WHERE id = $1`, [agent_id]);
+        if (assignee.rows.length === 0) {
+            return res.status(404).json({ error: "Assignee user not found." });
+        }
 
         const oldTicket = await pool.query(`
             SELECT t.agent_id, u.name as old_agent_name 
@@ -494,8 +631,7 @@ app.put("/api/tickets/:id/assign", authorizeRoles('admin', 'lead'), async (req, 
             RETURNING *;
         `, [agent_id, id]);
 
-        const newAgent = await pool.query(`SELECT name FROM users WHERE id = $1`, [agent_id]);
-        const newAgentName = newAgent.rows[0]?.name || 'Unassigned';
+        const newAgentName = assignee.rows[0]?.name || 'Unassigned';
 
         await pool.query(`
             INSERT INTO ticket_events (ticket_id, user_id, event_type, old_value, new_value, note, created_at)
@@ -531,19 +667,27 @@ app.post("/api/tickets/:id/messages", async (req, res) => {
     try {
         const { id } = req.params;
         const { sender_type, message } = req.body;
+        const cleanMessage = String(message || "").trim();
 
-        if (!message || !message.trim()) {
+        if (!cleanMessage) {
             return res.status(400).json({ error: "Message cannot be empty" });
+        }
+        if (cleanMessage.length > 5000) {
+            return res.status(400).json({ error: "Message too long (max 5000 chars)." });
+        }
+        const senderType = sender_type || 'agent';
+        if (!ALLOWED_SENDER_TYPES.includes(senderType)) {
+            return res.status(400).json({ error: `Invalid sender_type. Must be one of: ${ALLOWED_SENDER_TYPES.join(", ")}.` });
         }
 
         const result = await pool.query(`
             INSERT INTO ticket_messages (ticket_id, sender_type, message, created_at)
             VALUES ($1, $2, $3, NOW())
             RETURNING *;
-        `, [id, sender_type || 'agent', message]);
+        `, [id, senderType, cleanMessage]);
 
         // If it's the first agent response, update first_response_at
-        if ((sender_type || 'agent') === 'agent') {
+        if (senderType === 'agent') {
             await pool.query(`
                 UPDATE tickets 
                 SET first_response_at = COALESCE(first_response_at, NOW()) 
@@ -750,8 +894,12 @@ app.put("/api/admin/users/:id/role", authorizeRoles('admin'), async (req, res) =
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+if (require.main === module) {
+    app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+    });
+}
+
+module.exports = { app, authenticateToken, authorizeRoles, generateTicketPredictions };
 
 
